@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Healthy Food Finder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Import Mapbox GL JS -->
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+
+    <!-- Mapbox Geocoder Plugin -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1-dev/mapbox-gl-geocoder.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.1-dev/mapbox-gl-geocoder.css"
+      type="text/css"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 100%;
+      }
+      #locationBtn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: #008000;
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <button id="locationBtn">Get My Location</button>
+
+    <script>
+      mapboxgl.accessToken =
+        "pk.eyJ1Ijoic2F5YW4yMDAzIiwiYSI6ImNsemh2bXZqcTBhdWQyeHNjc2VzeWZ1eGcifQ.muXLpJRq2hgQdVC8gZSuGA";
+
+      // Initialize Map
+      const map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/light-v11",
+        center: [-105.0178157, 39.737925], // Default location
+        zoom: 12,
+      });
+
+      // Add Geocoder (Search Box)
+      const geocoder = new MapboxGeocoder({
+        accessToken: mapboxgl.accessToken,
+        mapboxgl: mapboxgl,
+        zoom: 13,
+        placeholder: "Enter place here",
+      });
+      map.addControl(geocoder, "top-left");
+
+      // Marker for user's location
+      const marker = new mapboxgl.Marker({ color: "#008000" });
+
+      // Load Custom Icon
+      map.on("load", () => {
+        map.loadImage(
+          "https://cdn-icons-png.flaticon.com/512/3209/3209265.png", // Replace with a valid image URL
+          (error, image) => {
+            if (error) throw error;
+            map.addImage("custom-icon", image);
+
+            // Add Source for Nearby Stores
+            map.addSource("tilequery", {
+              type: "geojson",
+              data: { type: "FeatureCollection", features: [] },
+            });
+
+            // Add Layer with Custom Icon
+            map.addLayer({
+              id: "tilequery-points",
+              type: "symbol",
+              source: "tilequery",
+              layout: {
+                "icon-image": "custom-icon", // Use the custom image
+                "icon-size": 0.05, // Adjust size of the icon
+                "icon-allow-overlap": true, // Prevents icons from disappearing when close together
+              },
+            });
+
+            map.on("click", "tilequery-points", () => {
+              const storeUrl = "https://www.google.com";
+
+              // Open the URL in a new tab
+              window.open(storeUrl, "_blank");
+            });
+            const popup = new mapboxgl.Popup();
+            // Add Click Event to Show Popup
+            map.on("mouseenter", "tilequery-points", (event) => {
+              // console.log();
+              map.getCanvas().style.cursor = "pointer";
+              const properties = event.features[0].properties;
+              const obj = JSON.parse(properties.tilequery);
+              const coordinates = new mapboxgl.LngLat(
+                properties.longitude,
+                properties.latitude
+              );
+
+              const storeName = properties.STORE_NAME || "Unknown Store";
+              const storeAddress =
+                properties.ADDRESS_LINE1 || "No address available";
+              const storeType = properties.STORE_TYPE || "Unkown Type";
+
+              const content = `<h3>${storeName}</h3><h4>${storeType}</h4><p>${storeAddress}</p><p>${(
+                obj.distance / 1609.344
+              ).toFixed(2)} mi. from location</p>`;
+
+              popup
+                .setLngLat(coordinates) // Set the popup at the given coordinates
+                .setHTML(content) // Set the popup contents equal to the HTML elements you created
+                .addTo(map); // Add the popup to the map
+              //   const feature = event.features[0];
+              //   if (!feature) return;
+
+              // Extract Store Info
+
+              // Show Popup
+              //   new mapboxgl.Popup()
+              //     .setLngLat(feature.geometry.coordinates)
+              //     .setHTML(
+              //       `
+              //                     <h3>${storeName}</h3>
+              //                     <p>${storeAddress}</p>
+              //                 `
+              //     )
+              //     .addTo(map);
+            });
+
+            // Change cursor to pointer on hover
+            // map.on("mouseenter", "tilequery-points", () => {
+            //   map.getCanvas().style.cursor = "pointer";
+            // });
+
+            map.on("mouseleave", "tilequery-points", () => {
+              map.getCanvas().style.cursor = "";
+              popup.remove();
+            });
+          }
+        );
+      });
+
+      // Function to Fetch Nearby Stores
+      async function fetchNearbyStores(lon, lat) {
+        const tileset = "sayan2003.c2iwdgfg"; // Your tileset ID
+        const radius = 1609; // 1 mile in meters
+        const limit = 50; // Max results
+
+        try {
+          const query = await fetch(
+            `https://api.mapbox.com/v4/${tileset}/tilequery/${lon},${lat}.json?radius=${radius}&limit=${limit}&access_token=${mapboxgl.accessToken}`,
+            { method: "GET" }
+          );
+          const json = await query.json();
+
+          console.log("API Response:", json);
+
+          if (!json || !json.features || json.features.length === 0) {
+            console.warn("No nearby stores found.");
+            return;
+          }
+
+          const source = map.getSource("tilequery");
+          if (source) {
+            source.setData(json);
+          } else {
+            console.warn("Source 'tilequery' not found.");
+          }
+        } catch (error) {
+          console.error("Error fetching nearby stores:", error);
+        }
+      }
+
+      // Handle Geocoder (Search Box) Selection
+      geocoder.on("result", async (event) => {
+        const point = event.result.center; // [longitude, latitude]
+        marker.setLngLat(point).addTo(map); // Update marker position
+        await fetchNearbyStores(point[0], point[1]); // Fetch nearby stores
+      });
+
+      // Get User's Current Location on Button Click
+      document.getElementById("locationBtn").addEventListener("click", () => {
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const { latitude, longitude } = position.coords;
+              console.log("User Location:", latitude, longitude);
+
+              // Set map center to user's location
+              map.flyTo({
+                center: [longitude, latitude],
+                zoom: 14,
+              });
+
+              // Add marker at user's location
+              marker.setLngLat([longitude, latitude]).addTo(map);
+
+              // Fetch nearby stores
+              fetchNearbyStores(longitude, latitude);
+            },
+            (error) => {
+              console.error("Error getting location:", error);
+              alert("Failed to get location. Please enable location services.");
+            }
+          );
+        } else {
+          alert("Geolocation is not supported by your browser.");
+        }
+      });
+    </script>
+  </body>
+</html>
